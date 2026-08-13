@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const User = require('../models/user.model');
+const User = require('../../user/models/user.model');
 
 class AuthRepository {
   /** Find user by email — includes password & refreshToken (select:false fields) */

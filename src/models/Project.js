@@ -3,19 +3,16 @@ const mongoose = require('mongoose');
 const projectSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    key: { type: String, required: true, unique: true, uppercase: true },
-    description: String,
-    department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', required: true },
-    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    status: { type: String, enum: ['planning', 'active', 'paused', 'completed', 'archived'], default: 'planning' },
-    priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
-    startDate: Date,
-    dueDate: Date,
-    progress: { type: Number, min: 0, max: 100, default: 0 },
-    deletedAt: Date,
+    key: { type: String, trim: true },
+    description: { type: String, default: '' },
+    department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    status: { type: String, default: 'active' },
+    progress: { type: Number, default: 0 },
+    dueDate: { type: Date, default: null },
+    deletedAt: { type: Date, default: null },
   },
-  { timestamps: true },
+  { timestamps: true, strict: false },
 );
 
-module.exports = mongoose.model('Project', projectSchema);
+module.exports = mongoose.models.Project || mongoose.model('Project', projectSchema);

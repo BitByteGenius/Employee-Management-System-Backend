@@ -1,2 +1,1 @@
-module.exports = require('../modules/auth/models/user.model');
-
+module.exports = require('../modules/user/models/user.model');

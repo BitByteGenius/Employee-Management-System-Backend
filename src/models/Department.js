@@ -2,15 +2,13 @@ const mongoose = require('mongoose');
 
 const departmentSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
-    code: { type: String, required: true, unique: true, uppercase: true },
-    description: String,
-    head: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
-    deletedAt: Date,
+    name: { type: String, required: true, trim: true },
+    code: { type: String, trim: true },
+    description: { type: String, default: '' },
+    manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    deletedAt: { type: Date, default: null },
   },
-  { timestamps: true },
+  { timestamps: true, strict: false },
 );
 
-module.exports = mongoose.model('Department', departmentSchema);
+module.exports = mongoose.models.Department || mongoose.model('Department', departmentSchema);

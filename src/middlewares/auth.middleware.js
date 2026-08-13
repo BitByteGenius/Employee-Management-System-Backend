@@ -10,7 +10,7 @@
 'use strict';
 
 const jwt = require('jsonwebtoken');
-const User = require('../modules/auth/models/user.model');
+const User = require('../modules/user/models/user.model');
 const AppError = require('../shared/errors/app.error');
 const asyncHandler = require('../shared/utils/async-handler.util');
 const { HTTP_STATUS, PERMISSIONS } = require('../constants');

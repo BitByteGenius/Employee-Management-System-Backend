@@ -38,7 +38,7 @@ const buildCrudRoutes = require('./crudRoutes');
 const authRoutes = require('../modules/auth/routes/auth.routes');
 
 // Existing routes
-const userRoutes = require('./userRoutes');
+const userRoutes = require('../modules/user/routes/userRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const reportRoutes = require('./reportRoutes');

@@ -5,7 +5,7 @@
 
 const mongoose = require('mongoose');
 const authRepository = require('../repositories/auth.repository');
-const Role = require('../models/role.model');
+const Role = require('../../roles/models/role.model');
 const AppError = require('../../../shared/errors/app.error');
 const env = require('../../../config/env');
 const { HTTP_STATUS } = require('../../../constants');

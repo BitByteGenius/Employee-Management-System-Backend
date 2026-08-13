@@ -1,8 +1,10 @@
-const User = require('../modules/auth/models/user.model');
-const Role = require('../modules/auth/models/role.model');
-const asyncHandler = require('../shared/utils/async-handler.util');
-const AppError = require('../shared/errors/app.error');
-const { HTTP_STATUS } = require('../constants');
+const User = require('../models/user.model');
+const Role = require('../../roles/models/role.model');
+const Department = require('../../../models/Department');
+const mongoose = require('mongoose');
+const asyncHandler = require('../../../shared/utils/async-handler.util');
+const AppError = require('../../../shared/errors/app.error');
+const { HTTP_STATUS } = require('../../../constants');
 
 const sanitizeUser = (user) => {
   if (typeof user.toSafeObject === 'function') {
@@ -30,10 +32,10 @@ const sanitizeUser = (user) => {
 };
 
 const list = asyncHandler(async (req, res) => {
-  const { status, role, search } = req.query;
+  const { status, role, search, page = 1, limit = 25, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
   const filter = { isDeleted: false };
   if (status) {
-    filter.$or = [{ status }, { accountStatus: status }];
+    filter.status = status;
   }
   if (search) {
     filter.$or = [
@@ -43,8 +45,21 @@ const list = asyncHandler(async (req, res) => {
       { email: { $regex: search, $options: 'i' } },
     ];
   }
-  
-  const users = await User.find(filter).populate('role').sort({ createdAt: -1 });
+
+  const sortField = ['fullName', 'email', 'createdAt', 'status'].includes(sortBy) ? sortBy : 'createdAt';
+  const sort = { [sortField]: sortOrder === 'asc' ? 1 : -1 };
+  const pageNumber = Math.max(Number(page) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(limit) || 25, 1), 100);
+
+  const [users, total] = await Promise.all([
+    User.find(filter)
+      .populate('role')
+      .populate('department')
+      .sort(sort)
+      .skip((pageNumber - 1) * pageSize)
+      .limit(pageSize),
+    User.countDocuments(filter),
+  ]);
   
   let result = users;
   if (role) {
@@ -54,7 +69,16 @@ const list = asyncHandler(async (req, res) => {
     });
   }
 
-  res.json({ success: true, data: result.map(sanitizeUser) });
+  res.json({
+    success: true,
+    data: result.map(sanitizeUser),
+    meta: {
+      page: pageNumber,
+      limit: pageSize,
+      total,
+      totalPages: Math.max(Math.ceil(total / pageSize), 1),
+    },
+  });
 });
 
 const approve = asyncHandler(async (req, res) => {
@@ -125,6 +149,50 @@ const updateRole = asyncHandler(async (req, res) => {
   res.json({ success: true, data: sanitizeUser(user) });
 });
 
+const assignDepartment = asyncHandler(async (req, res) => {
+  const { departmentId } = req.body;
+  if (!departmentId) throw new AppError('Department is required', HTTP_STATUS.BAD_REQUEST);
+
+  const department = await Department.findById(departmentId);
+  if (!department || department.deletedAt) {
+    throw new AppError('Invalid department specified', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.params.id,
+    { department: department._id },
+    { new: true },
+  ).populate('role').populate('department');
+  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+
+  res.json({ success: true, data: sanitizeUser(user) });
+});
+
+const assignRole = asyncHandler(async (req, res) => {
+  const { roleId, role } = req.body;
+  const requestedRole = roleId || role;
+  if (!requestedRole) throw new AppError('Role is required', HTTP_STATUS.BAD_REQUEST);
+
+  let roleDoc = mongoose.Types.ObjectId.isValid(requestedRole)
+    ? await Role.findById(requestedRole)
+    : null;
+  if (!roleDoc) {
+    roleDoc = await Role.findOne({ name: requestedRole });
+  }
+  if (!roleDoc) {
+    throw new AppError('Invalid role specified', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.params.id,
+    { role: roleDoc._id },
+    { new: true },
+  ).populate('role').populate('department');
+  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+
+  res.json({ success: true, data: sanitizeUser(user) });
+});
+
 const remove = asyncHandler(async (req, res) => {
   const user = await User.findByIdAndUpdate(
     req.params.id,
@@ -136,5 +204,4 @@ const remove = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'User deleted successfully' });
 });
 
-module.exports = { list, approve, reject, activate, deactivate, updateRole, remove };
-
+module.exports = { list, approve, reject, activate, deactivate, updateRole, assignDepartment, assignRole, remove };

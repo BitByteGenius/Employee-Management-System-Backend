@@ -4,8 +4,8 @@
  */
 'use strict';
 
-const Role = require('../modules/auth/models/role.model');
-const User = require('../modules/auth/models/user.model');
+const Role = require('../modules/roles/models/role.model');
+const User = require('../modules/user/models/user.model');
 const { ROLES, PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } = require('../constants/roles');
 const env = require('../config/env');
 
