@@ -42,6 +42,7 @@ const userRoutes = require('../modules/user/routes/userRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const reportRoutes = require('./reportRoutes');
+const deliverableRoutes = require('../modules/project/routes/deliverableRoutes');
 
 // Models
 const Department = require('../models/Department');
@@ -94,16 +95,18 @@ router.use(
 // PROJECTS
 // ============================================================================
 
-router.use(
-    '/projects',
-    buildCrudRoutes({
-        Model: Project,
-        entity: 'Project',
-        readPermission: PERMISSIONS.PROJECTS_READ,
-        managePermission: PERMISSIONS.PROJECTS_MANAGE,
-        validator: projectValidator,
-    })
-);
+// router.use(
+//     '/projects',
+//     buildCrudRoutes({
+//         Model: Project,
+//         entity: 'Project',
+//         readPermission: PERMISSIONS.PROJECTS_READ,
+//         managePermission: PERMISSIONS.PROJECTS_MANAGE,
+//         validator: projectValidator,
+//     })
+// );
+
+router.use('/projects', deliverablesRoutes);
 
 
 // ============================================================================
@@ -186,6 +189,10 @@ router.use('/notifications', notificationRoutes);
 // ============================================================================
 
 router.use('/reports', reportRoutes);
+
+
+//===========================================================================
+//Project
 
 
 // ============================================================================
