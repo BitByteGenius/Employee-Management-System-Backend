@@ -79,7 +79,7 @@ const seedSuperAdmin = async () => {
     const superAdminName = env.SUPER_ADMIN_NAME || process.env.SUPER_ADMIN_NAME || 'Super Admin';
 
     try {
-      let superAdminUser = await User.findOne({ email: superAdminEmail }).withDeleted();
+      let superAdminUser = await User.findOne({ email: superAdminEmail }).select('+password').withDeleted();
 
       const nameParts = superAdminName.trim().split(' ');
       const firstName = nameParts[0] || 'Super';

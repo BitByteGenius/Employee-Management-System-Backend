@@ -9,8 +9,10 @@
  */
 'use strict';
 
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const User = require('../modules/user/models/user.model');
+const Role = require('../models/Role');
 const AppError = require('../shared/errors/app.error');
 const asyncHandler = require('../shared/utils/async-handler.util');
 const { HTTP_STATUS, PERMISSIONS } = require('../constants');
@@ -35,17 +37,45 @@ const authenticate = asyncHandler(async (req, res, next) => {
     );
   }
 
-  /* ── Authenticate User via MongoDB ─────────────────────────────────── */
-  if (payload.sub === 'super_admin_dev' && payload.role === 'super_admin') {
+  /* ── Authenticate Super Admin / Dev Token via MongoDB ───────────────────────────── */
+  if (payload.sub === 'super_admin_dev' || payload.sub === 'super-admin' || (payload.role === 'super_admin' && !mongoose.Types.ObjectId.isValid(payload.sub))) {
+    let superAdminUser = await User.findOne({ email: env.SUPER_ADMIN_EMAIL }).populate('role').lean();
+    if (!superAdminUser) {
+      let superAdminRole = await Role.findOne({ name: 'super_admin' });
+      if (!superAdminRole) {
+        superAdminRole = await Role.create({
+          name: 'super_admin',
+          label: 'Super Admin',
+          description: 'Full system access',
+          permissions: Object.values(PERMISSIONS),
+          isSystem: true,
+        });
+      }
+      superAdminUser = await User.create({
+        employeeCode: 'SA-001',
+        firstName: env.SUPER_ADMIN_NAME.split(' ')[0] || 'Super',
+        lastName: env.SUPER_ADMIN_NAME.split(' ').slice(1).join(' ') || 'Admin',
+        fullName: env.SUPER_ADMIN_NAME,
+        email: env.SUPER_ADMIN_EMAIL,
+        password: await hashPassword(env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123'),
+        role: superAdminRole._id,
+        isActive: true,
+        isApproved: true,
+        status: 'approved',
+        isEmailVerified: true,
+      });
+    }
+
+    const userId = (superAdminUser._id || superAdminUser.id).toString();
     req.user = {
-      id: 'super_admin_dev',
-      _id: 'super_admin_dev',
+      id: userId,
+      _id: userId,
       role: 'super_admin',
       permissions: Object.values(PERMISSIONS),
-      email: payload.email || env.SUPER_ADMIN_EMAIL,
-      name: env.SUPER_ADMIN_NAME,
-      firstName: env.SUPER_ADMIN_NAME.split(' ')[0],
-      lastName: env.SUPER_ADMIN_NAME.split(' ').slice(1).join(' ') || 'Admin',
+      email: superAdminUser.email || env.SUPER_ADMIN_EMAIL,
+      name: superAdminUser.fullName || env.SUPER_ADMIN_NAME,
+      firstName: superAdminUser.firstName || 'Super',
+      lastName: superAdminUser.lastName || 'Admin',
       isSuperAdmin: true,
     };
 
