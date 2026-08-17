@@ -42,7 +42,7 @@ const userRoutes = require('../modules/user/routes/userRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const reportRoutes = require('./reportRoutes');
-const deliverableRoutes = require('../modules/project/routes/deliverableRoutes');
+const deliverablesRoutes = require('../modules/projects/routes/deliverablesRoutes');
 
 // Models
 const Department = require('../models/Department');

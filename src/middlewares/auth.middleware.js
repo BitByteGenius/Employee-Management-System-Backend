@@ -36,6 +36,22 @@ const authenticate = asyncHandler(async (req, res, next) => {
   }
 
   /* ── Authenticate User via MongoDB ─────────────────────────────────── */
+  if (payload.sub === 'super_admin_dev' && payload.role === 'super_admin') {
+    req.user = {
+      id: 'super_admin_dev',
+      _id: 'super_admin_dev',
+      role: 'super_admin',
+      permissions: Object.values(PERMISSIONS),
+      email: payload.email || env.SUPER_ADMIN_EMAIL,
+      name: env.SUPER_ADMIN_NAME,
+      firstName: env.SUPER_ADMIN_NAME.split(' ')[0],
+      lastName: env.SUPER_ADMIN_NAME.split(' ').slice(1).join(' ') || 'Admin',
+      isSuperAdmin: true,
+    };
+
+    return next();
+  }
+
   const user = await User.findById(payload.sub).populate('role').lean();
 
   if (!user) {

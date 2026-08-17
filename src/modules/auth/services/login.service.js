@@ -81,12 +81,12 @@ const login = async ({ email, password, device = {}, req }) => {
     throw new AppError('Invalid email or password.', HTTP_STATUS.UNAUTHORIZED);
   }
 
-  if (!user.isActive) {
-    throw new AppError('Your account has been deactivated.', HTTP_STATUS.FORBIDDEN);
+  if (!user.isApproved || user.status !== 'approved') {
+    throw new AppError('Account pending approval. Please wait for Super Admin approval.', HTTP_STATUS.FORBIDDEN);
   }
 
-  if (!user.isApproved || user.status !== 'approved') {
-    throw new AppError('Your account is not yet approved. Please wait for Super Admin approval.', HTTP_STATUS.FORBIDDEN);
+  if (!user.isActive) {
+    throw new AppError('Your account has been deactivated.', HTTP_STATUS.FORBIDDEN);
   }
 
   if (user.isLocked()) {

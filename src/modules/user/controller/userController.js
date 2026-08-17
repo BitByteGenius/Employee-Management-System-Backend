@@ -26,14 +26,22 @@ const sanitizeUser = (user) => {
     designation: user.designation,
     isActive: user.isActive,
     isApproved: user.isApproved,
+    isDeleted: user.isDeleted,
     status: user.status,
     accountStatus: user.status,
+    createdAt: user.createdAt,
   };
 };
 
 const list = asyncHandler(async (req, res) => {
-  const { status, role, search, page = 1, limit = 25, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
-  const filter = { isDeleted: false };
+  const { status, role, search, deleted, page = 1, limit = 25, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+  const includeDeleted = deleted === 'true' || deleted === 'all';
+  const filter = {};
+  if (!includeDeleted) {
+    filter.isDeleted = false;
+  } else if (deleted === 'true') {
+    filter.isDeleted = true;
+  }
   if (status) {
     filter.status = status;
   }
@@ -53,12 +61,13 @@ const list = asyncHandler(async (req, res) => {
 
   const [users, total] = await Promise.all([
     User.find(filter)
+      .setOptions(includeDeleted ? { withDeleted: true } : {})
       .populate('role')
       .populate('department')
       .sort(sort)
       .skip((pageNumber - 1) * pageSize)
       .limit(pageSize),
-    User.countDocuments(filter),
+    User.countDocuments(filter).setOptions(includeDeleted ? { withDeleted: true } : {}),
   ]);
   
   let result = users;
@@ -198,10 +207,10 @@ const remove = asyncHandler(async (req, res) => {
     req.params.id,
     { isDeleted: true, isActive: false, status: 'rejected' },
     { new: true }
-  );
+  ).populate('role').populate('department');
   if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
 
-  res.json({ success: true, message: 'User deleted successfully' });
+  res.json({ success: true, message: 'User deleted successfully', data: sanitizeUser(user) });
 });
 
 module.exports = { list, approve, reject, activate, deactivate, updateRole, assignDepartment, assignRole, remove };

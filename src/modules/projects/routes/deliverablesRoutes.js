@@ -1,8 +1,8 @@
 const router = require('express').Router();
-const uploadDeliverable = require('../../middlewares/uploadMiddleware'); // adjust path as needed
-const { deliverableValidator } = require('../../validators/moduleValidators');
-const Project = require('../../models/Project'); // Adjust path based on your structure
-// const validate = require('../../middlewares/validate'); // Use your existing validation middleware if available
+const uploadDeliverable = require('../../../middlewares/uploadMiddleware'); // Adjust relative dots
+const { deliverableValidator } = require('../../../validators/moduleValidators');
+const Project = require('../../../models/Project'); // Adjust relative dots
+
 
 router.post(
   '/:id/deliverables',
