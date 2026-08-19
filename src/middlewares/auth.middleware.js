@@ -82,7 +82,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
     return next();
   }
 
-  const user = await User.findById(payload.sub).populate('role').lean();
+  const user = await User.findById(payload.sub).populate('assignedRole').populate('role').lean();
 
   if (!user) {
     throw new AppError('User not found or account deleted.', HTTP_STATUS.UNAUTHORIZED);
@@ -96,14 +96,22 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new AppError('Your account is not approved.', HTTP_STATUS.FORBIDDEN);
   }
 
-  const roleName = user.role?.name || 'employee';
-  const isSuperAdmin = roleName === 'super_admin';
-  const permissions = isSuperAdmin ? Object.values(PERMISSIONS) : (user.role?.permissions || []);
+  const { DEFAULT_ROLE_PERMISSIONS } = require('../constants/roles');
+  const sysRole = user.systemRole || (
+    user.role?.name?.toUpperCase().includes('SUPER') ? 'SUPER_ADMIN' : (user.role?.name?.toUpperCase().includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE')
+  );
+  const isSuperAdmin = sysRole === 'SUPER_ADMIN' || user.role?.name === 'super_admin';
+  const roleName = isSuperAdmin ? 'super_admin' : (sysRole === 'ADMIN' ? 'admin' : 'employee');
+  const permissions = isSuperAdmin
+    ? Object.values(PERMISSIONS)
+    : (user.assignedRole?.permissions || (sysRole === 'ADMIN' ? (DEFAULT_ROLE_PERMISSIONS.admin || []) : (user.role?.permissions || DEFAULT_ROLE_PERMISSIONS.employee || [])));
 
   req.user = {
     id: user._id.toString(),
     _id: user._id.toString(),
     role: roleName,
+    systemRole: sysRole,
+    assignedRole: user.assignedRole,
     permissions,
     email: user.email,
     name: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),

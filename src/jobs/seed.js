@@ -93,6 +93,8 @@ const seedSuperAdmin = async () => {
           fullName: superAdminName,
           email: superAdminEmail,
           password: superAdminPassword, // pre-save hook will hash it
+          systemRole: 'SUPER_ADMIN',
+          assignedRole: roleDocs[ROLES.SUPER_ADMIN]._id,
           role: roleDocs[ROLES.SUPER_ADMIN]._id,
           status: 'approved',
           isApproved: true,
@@ -103,6 +105,8 @@ const seedSuperAdmin = async () => {
         console.log(`[Seed] Created Super Admin account: ${superAdminEmail}`);
       } else {
         // Ensure role, status, active state, and password are correctly set
+        superAdminUser.systemRole = 'SUPER_ADMIN';
+        superAdminUser.assignedRole = roleDocs[ROLES.SUPER_ADMIN]._id;
         superAdminUser.role = roleDocs[ROLES.SUPER_ADMIN]._id;
         superAdminUser.status = 'approved';
         superAdminUser.isApproved = true;
@@ -112,6 +116,31 @@ const seedSuperAdmin = async () => {
         }
         await superAdminUser.save();
         console.log(`[Seed] Verified Super Admin account: ${superAdminEmail}`);
+      }
+
+      // 3. Migrate existing users if systemRole is not set
+      try {
+        const unmigratedUsers = await User.find({
+          $or: [{ systemRole: { $exists: false } }, { systemRole: null }],
+        }).populate('role').withDeleted();
+
+        for (const u of unmigratedUsers) {
+          const roleName = (u.role?.name || '').toLowerCase();
+          if (roleName.includes('super')) {
+            u.systemRole = 'SUPER_ADMIN';
+            u.assignedRole = u.role?._id || null;
+          } else if (roleName.includes('admin')) {
+            u.systemRole = 'ADMIN';
+            u.assignedRole = null;
+          } else {
+            u.systemRole = 'EMPLOYEE';
+            u.assignedRole = (u.role && u.role.name !== 'employee') ? u.role._id : null;
+          }
+          await u.save();
+          console.log(`[Seed/Migration] Migrated user ${u.email} -> systemRole: ${u.systemRole}`);
+        }
+      } catch (migError) {
+        console.warn('[Seed/Migration] Migration warning:', migError.message);
       }
     } catch (userError) {
       console.error('[Seed] Error seeding Super Admin user:', userError.message);

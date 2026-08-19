@@ -120,15 +120,8 @@ router.use(
 // AUDIT LOGS
 // ============================================================================
 
-router.use(
-  '/audit-logs',
-  buildCrudRoutes({
-    Model: AuditLog,
-    entity: 'AuditLog',
-    readPermission: PERMISSIONS.AUDIT_READ,
-    managePermission: PERMISSIONS.AUDIT_READ,
-  })
-);
+const auditRoutes = require('../modules/audit/routes/audit.routes');
+router.use('/audit-logs', auditRoutes);
 
 // ============================================================================
 // ANALYTICS

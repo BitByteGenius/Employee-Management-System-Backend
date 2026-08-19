@@ -40,24 +40,13 @@ const register = async (payload) => {
     throw new AppError('Email is already registered.', HTTP_STATUS.CONFLICT);
   }
 
-  // Resolve role — accept either ObjectId or role name string
-  let roleId = role;
-  if (role && typeof role === 'string' && !mongoose.Types.ObjectId.isValid(role)) {
-    const roleDoc = await Role.findOne({
-      $or: [
-        { name: new RegExp(`^${role}$`, 'i') },
-        { label: new RegExp(`^${role}$`, 'i') },
-      ],
-    });
-    if (roleDoc) {
-      roleId = roleDoc._id;
-    } else {
-      throw new AppError('Invalid role specified.', HTTP_STATUS.BAD_REQUEST);
-    }
-  }
-
-  if (!roleId || !mongoose.Types.ObjectId.isValid(roleId)) {
-    throw new AppError('A valid role is required.', HTTP_STATUS.BAD_REQUEST);
+  // Determine systemRole (EMPLOYEE or ADMIN)
+  let systemRole = 'EMPLOYEE';
+  const roleInput = (payload.systemRole || payload.role || '').toString().toUpperCase();
+  if (roleInput.includes('ADMIN')) {
+    systemRole = 'ADMIN';
+  } else {
+    systemRole = 'EMPLOYEE';
   }
 
   const employeeCode = generateEmployeeCode();
@@ -69,7 +58,9 @@ const register = async (payload) => {
     email,
     password,
     phone,
-    role: roleId,
+    systemRole,
+    assignedRole: null,
+    role: null,
     department: department || null,
     designation: designation || '',
     status: 'pending',

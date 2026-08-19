@@ -5,11 +5,41 @@ const mongoose = require('mongoose');
 const asyncHandler = require('../../../shared/utils/async-handler.util');
 const AppError = require('../../../shared/errors/app.error');
 const { HTTP_STATUS } = require('../../../constants');
+const auditHelper = require('../../../shared/helpers/audit.helper');
+const { AUDIT_ENTITIES } = require('../../audit/constants/audit.constants');
 
 const sanitizeUser = (user) => {
   if (typeof user.toSafeObject === 'function') {
     return user.toSafeObject();
   }
+
+  const sysRole = user.systemRole || (
+    typeof user.role === 'object' && user.role !== null && user.role.name
+      ? (user.role.name.toUpperCase().includes('SUPER') ? 'SUPER_ADMIN' : (user.role.name.toUpperCase().includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE'))
+      : 'EMPLOYEE'
+  );
+
+  const assignedRoleObj = user.assignedRole;
+  const assignedRoleId = (typeof assignedRoleObj === 'object' && assignedRoleObj !== null && assignedRoleObj._id)
+    ? assignedRoleObj._id.toString()
+    : (user.assignedRole ? user.assignedRole.toString() : null);
+  const assignedRoleLabel = (typeof assignedRoleObj === 'object' && assignedRoleObj !== null)
+    ? (assignedRoleObj.label || assignedRoleObj.name || null)
+    : null;
+
+  const roleObj = user.role;
+  const permissions = (typeof assignedRoleObj === 'object' && assignedRoleObj !== null && assignedRoleObj.permissions)
+    ? assignedRoleObj.permissions
+    : ((typeof roleObj === 'object' && roleObj !== null && roleObj.permissions) ? roleObj.permissions : []);
+
+  const deptObj = user.department;
+  const departmentId = (typeof deptObj === 'object' && deptObj !== null && deptObj._id)
+    ? deptObj._id.toString()
+    : (user.department ? user.department.toString() : null);
+  const departmentName = (typeof deptObj === 'object' && deptObj !== null)
+    ? (deptObj.name || deptObj.code || null)
+    : null;
+
   return {
     id: user._id?.toString() || user.id,
     _id: user._id?.toString() || user.id,
@@ -20,16 +50,29 @@ const sanitizeUser = (user) => {
     lastName: user.lastName,
     email: user.email,
     phone: user.phone,
-    role: typeof user.role === 'object' && user.role !== null ? (user.role.name || 'employee') : String(user.role || 'employee'),
-    permissions: typeof user.role === 'object' && user.role !== null ? (user.role.permissions || []) : [],
-    department: user.department,
+
+    systemRole: sysRole,
+    role: sysRole,
+
+    assignedRole: typeof assignedRoleObj === 'object' ? assignedRoleObj : null,
+    assignedRoleId,
+    assignedRoleLabel,
+
+    permissions,
+
+    department: typeof deptObj === 'object' ? deptObj : null,
+    departmentId,
+    departmentName,
+
     designation: user.designation,
+    profilePicture: user.profilePicture,
     isActive: user.isActive,
     isApproved: user.isApproved,
     isDeleted: user.isDeleted,
     status: user.status,
     accountStatus: user.status,
     createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
   };
 };
 
@@ -62,8 +105,9 @@ const list = asyncHandler(async (req, res) => {
   const [users, total] = await Promise.all([
     User.find(filter)
       .setOptions(includeDeleted ? { withDeleted: true } : {})
-      .populate('role')
+      .populate('assignedRole')
       .populate('department')
+      .populate('role')
       .sort(sort)
       .skip((pageNumber - 1) * pageSize)
       .limit(pageSize),
@@ -73,8 +117,9 @@ const list = asyncHandler(async (req, res) => {
   let result = users;
   if (role) {
     result = users.filter((u) => {
-      const rName = typeof u.role === 'object' && u.role !== null ? u.role.name : String(u.role);
-      return rName.toLowerCase() === role.toLowerCase();
+      const sRole = (u.systemRole || '').toUpperCase();
+      const aRole = (u.assignedRole?.name || u.role?.name || '').toLowerCase();
+      return sRole === role.toUpperCase() || aRole === role.toLowerCase();
     });
   }
 
@@ -91,51 +136,92 @@ const list = asyncHandler(async (req, res) => {
 });
 
 const approve = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  const user = await User.findById(req.params.id).populate('assignedRole').populate('department');
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+
+  if (user.systemRole === 'EMPLOYEE') {
+    if (!user.assignedRole || !user.department) {
+      throw new AppError('Department and role assignment are required before approving an employee.', HTTP_STATUS.BAD_REQUEST);
+    }
+  } else if (user.systemRole === 'ADMIN') {
+    if (!user.department) {
+      throw new AppError('Department assignment is required before approving an administrator.', HTTP_STATUS.BAD_REQUEST);
+    }
+  }
 
   user.status = 'approved';
   user.isApproved = true;
   user.isActive = true;
   await user.save();
-  await user.populate('role');
+  await user.populate('assignedRole');
+  await user.populate('department');
 
-  res.json({ success: true, data: sanitizeUser(user) });
+  await auditHelper.log({
+    req,
+    user: req.user?.id || req.user?._id,
+    action: 'user.approve',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      targetUserName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      targetUserEmail: user.email,
+      systemRole: user.systemRole,
+      roleName: user.assignedRole?.label || user.assignedRole?.name,
+      departmentName: user.department?.name,
+    },
+  });
+
+  res.json({ success: true, message: 'User approved successfully', data: sanitizeUser(user) });
 });
 
 const reject = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
 
   user.status = 'rejected';
   user.isApproved = false;
   user.isActive = false;
   await user.save();
-  await user.populate('role');
+  await user.populate('assignedRole');
+  await user.populate('department');
 
-  res.json({ success: true, data: sanitizeUser(user) });
+  await auditHelper.log({
+    req,
+    user: req.user?.id || req.user?._id,
+    action: 'user.reject',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      targetUserName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      targetUserEmail: user.email,
+    },
+  });
+
+  res.json({ success: true, message: 'User rejected successfully', data: sanitizeUser(user) });
 });
 
 const activate = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
 
   user.status = 'approved';
   user.isApproved = true;
   user.isActive = true;
   await user.save();
-  await user.populate('role');
+  await user.populate('assignedRole');
+  await user.populate('department');
 
   res.json({ success: true, data: sanitizeUser(user) });
 });
 
 const deactivate = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
 
   user.isActive = false;
   await user.save();
-  await user.populate('role');
+  await user.populate('assignedRole');
+  await user.populate('department');
 
   res.json({ success: true, data: sanitizeUser(user) });
 });
@@ -148,58 +234,113 @@ const updateRole = asyncHandler(async (req, res) => {
   if (!roleDoc && role.length === 24) {
     roleDoc = await Role.findById(role);
   }
-  if (!roleDoc) {
+  if (!roleDoc || roleDoc.isDeleted) {
     throw new AppError('Invalid role specified', HTTP_STATUS.BAD_REQUEST);
   }
 
-  const user = await User.findByIdAndUpdate(req.params.id, { role: roleDoc._id }, { new: true }).populate('role');
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  const user = await User.findByIdAndUpdate(req.params.id, { assignedRole: roleDoc._id }, { new: true })
+    .populate('assignedRole')
+    .populate('department');
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
 
   res.json({ success: true, data: sanitizeUser(user) });
 });
 
 const assignDepartment = asyncHandler(async (req, res) => {
-  const { departmentId } = req.body;
-  if (!departmentId) throw new AppError('Department is required', HTTP_STATUS.BAD_REQUEST);
+  const departmentId = req.body.departmentId || req.body.department;
+  if (!departmentId) throw new AppError('Department ID is required', HTTP_STATUS.BAD_REQUEST);
 
-  const department = await Department.findById(departmentId);
-  if (!department || department.deletedAt) {
+  const user = await User.findById(req.params.id);
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+
+  if (user.systemRole !== 'ADMIN') {
+    throw new AppError('Admin department assignment endpoint is for administrators only.', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(departmentId)) {
     throw new AppError('Invalid department specified', HTTP_STATUS.BAD_REQUEST);
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
-    { department: department._id },
-    { new: true },
-  ).populate('role').populate('department');
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  const department = await Department.findById(departmentId);
+  if (!department || department.isDeleted || department.deletedAt) {
+    throw new AppError('Invalid or deleted department specified', HTTP_STATUS.BAD_REQUEST);
+  }
 
-  res.json({ success: true, data: sanitizeUser(user) });
+  user.department = department._id;
+  await user.save();
+  await user.populate('assignedRole');
+  await user.populate('department');
+
+  await auditHelper.log({
+    req,
+    user: req.user?.id || req.user?._id,
+    action: 'user.assign_department',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      targetUserName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      targetUserEmail: user.email,
+      departmentName: department.name,
+    },
+  });
+
+  res.json({ success: true, message: 'Department assigned successfully', data: sanitizeUser(user) });
 });
 
 const assignRole = asyncHandler(async (req, res) => {
-  const { roleId, role } = req.body;
-  const requestedRole = roleId || role;
-  if (!requestedRole) throw new AppError('Role is required', HTTP_STATUS.BAD_REQUEST);
+  const roleId = req.body.roleId || req.body.role;
+  const departmentId = req.body.departmentId || req.body.department;
 
-  let roleDoc = mongoose.Types.ObjectId.isValid(requestedRole)
-    ? await Role.findById(requestedRole)
+  const user = await User.findById(req.params.id);
+  if (!user || user.isDeleted) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+
+  if (user.systemRole !== 'EMPLOYEE') {
+    throw new AppError('Assigned roles can only be set for employees.', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  if (!roleId) throw new AppError('Role ID is required', HTTP_STATUS.BAD_REQUEST);
+  if (!departmentId) throw new AppError('Department ID is required', HTTP_STATUS.BAD_REQUEST);
+
+  let roleDoc = mongoose.Types.ObjectId.isValid(roleId)
+    ? await Role.findById(roleId)
     : null;
   if (!roleDoc) {
-    roleDoc = await Role.findOne({ name: requestedRole });
+    roleDoc = await Role.findOne({ name: roleId });
   }
-  if (!roleDoc) {
-    throw new AppError('Invalid role specified', HTTP_STATUS.BAD_REQUEST);
+  if (!roleDoc || roleDoc.isDeleted) {
+    throw new AppError('Invalid or deleted role specified', HTTP_STATUS.BAD_REQUEST);
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
-    { role: roleDoc._id },
-    { new: true },
-  ).populate('role').populate('department');
-  if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+  if (!mongoose.Types.ObjectId.isValid(departmentId)) {
+    throw new AppError('Invalid department specified', HTTP_STATUS.BAD_REQUEST);
+  }
 
-  res.json({ success: true, data: sanitizeUser(user) });
+  const deptDoc = await Department.findById(departmentId);
+  if (!deptDoc || deptDoc.isDeleted || deptDoc.deletedAt) {
+    throw new AppError('Invalid or deleted department specified', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  user.assignedRole = roleDoc._id;
+  user.department = deptDoc._id;
+  await user.save();
+  await user.populate('assignedRole');
+  await user.populate('department');
+
+  await auditHelper.log({
+    req,
+    user: req.user?.id || req.user?._id,
+    action: 'user.assign_role',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      targetUserName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      targetUserEmail: user.email,
+      roleName: roleDoc.label || roleDoc.name,
+      departmentName: deptDoc.name,
+    },
+  });
+
+  res.json({ success: true, message: 'Role and department assigned successfully', data: sanitizeUser(user) });
 });
 
 const remove = asyncHandler(async (req, res) => {
@@ -207,8 +348,21 @@ const remove = asyncHandler(async (req, res) => {
     req.params.id,
     { isDeleted: true, isActive: false, status: 'rejected' },
     { new: true }
-  ).populate('role').populate('department');
+  ).populate('assignedRole').populate('department');
+
   if (!user) throw new AppError('User not found', HTTP_STATUS.NOT_FOUND);
+
+  await auditHelper.log({
+    req,
+    user: req.user?.id || req.user?._id,
+    action: 'user.delete',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      targetUserName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      targetUserEmail: user.email,
+    },
+  });
 
   res.json({ success: true, message: 'User deleted successfully', data: sanitizeUser(user) });
 });

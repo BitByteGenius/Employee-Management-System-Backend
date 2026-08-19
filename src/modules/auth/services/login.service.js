@@ -146,11 +146,16 @@ const login = async ({ email, password, device = {}, req }) => {
   await authRepository.resetLoginAttempts(user._id);
 
   /* ── JWT ─────────────────────────────────────────────────────────────── */
-  const roleName = user.role?.name || 'employee';
+  const sysRole = user.systemRole || (
+    user.role?.name?.toUpperCase().includes('SUPER') ? 'SUPER_ADMIN' : (user.role?.name?.toUpperCase().includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE')
+  );
+  const isSuperAdmin = sysRole === 'SUPER_ADMIN' || user.role?.name === 'super_admin';
+  const roleName = isSuperAdmin ? 'super_admin' : (sysRole === 'ADMIN' ? 'admin' : 'employee');
 
   const jwtPayload = {
     sub: user._id.toString(),
     role: roleName,
+    systemRole: sysRole,
     email: user.email,
   };
 
