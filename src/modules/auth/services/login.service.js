@@ -184,6 +184,10 @@ const login = async ({ email, password, device = {}, req }) => {
     action: AUDIT_ACTIONS.LOGIN,
     entity: AUDIT_ENTITIES.AUTH,
     entityId: user._id,
+    metadata: {
+      actorName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      email: user.email,
+    },
   });
 
   /* ── Response ────────────────────────────────────────────────────────── */
