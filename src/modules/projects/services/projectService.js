@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Project = require('../../../models/Project');
 const Department = require('../../departments/models/departmentModel');
 const User = require('../../user/models/user.model');
+const { isCloudinaryConfigured, uploadBufferToCloudinary } = require('../../../config/cloudinary');
 
 const escapeRegex = (value = '') =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -176,7 +177,7 @@ class ProjectService {
   /**
    * Create new project
    */
-  async createProject(data, currentUserId) {
+  async createProject(data, currentUserId, file = null) {
     const projectName = (data.name || data.title || '').trim();
     const {
       key,
@@ -210,6 +211,41 @@ class ProjectService {
     const validManager = (manager && isValidObjectId(manager)) ? manager : null;
     const validOwner = (owner && isValidObjectId(owner)) ? owner : validUserId;
 
+    const deliverables = [];
+    if (file && file.buffer) {
+      let fileUrl = null;
+      let filePath = null;
+      let fileName = file.originalname;
+      let fileSize = file.size;
+
+      if (isCloudinaryConfigured()) {
+        try {
+          const uploadResult = await uploadBufferToCloudinary(file.buffer, {
+            folder: 'teamorbit/projects',
+            resource_type: 'auto',
+          });
+          fileUrl = uploadResult.secure_url;
+          filePath = uploadResult.secure_url;
+          if (uploadResult.bytes) fileSize = uploadResult.bytes;
+        } catch (cloudErr) {
+          console.error('Cloudinary upload error in createProject:', cloudErr);
+        }
+      } else {
+        filePath = `uploads/${file.originalname}`;
+        fileUrl = filePath;
+      }
+
+      deliverables.push({
+        fileName,
+        filePath,
+        fileUrl,
+        fileSize,
+        mimeType: file.mimetype,
+        submittedAt: new Date(),
+        submittedBy: validUserId,
+      });
+    }
+
     const project = await Project.create({
       name: projectName,
       key: generatedKey,
@@ -224,6 +260,7 @@ class ProjectService {
       startDate: startDate ? new Date(startDate) : new Date(),
       tasksCount: Number(tasksCount) || 0,
       completedTasksCount: Number(completedTasksCount) || 0,
+      deliverables,
       createdBy: validUserId,
       updatedBy: validUserId,
     });

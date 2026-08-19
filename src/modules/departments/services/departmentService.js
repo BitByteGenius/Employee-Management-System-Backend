@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Department = require('../models/departmentModel');
 const User = require('../../user/models/user.model');
+const Role = require('../../../models/Role');
 
 const escapeRegex = (value = '') =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -458,23 +459,39 @@ class DepartmentService {
    */
   async getAdminCandidates(search = '') {
     try {
+      const adminRoles = await Role.find({
+        name: { $in: ['admin', 'super_admin', 'department_admin'] },
+        isDeleted: { $ne: true },
+      }).select('_id').lean();
+
+      const adminRoleIds = adminRoles.map((r) => r._id);
+
       const filter = {
         isDeleted: { $ne: true },
+        $or: [
+          { role: { $in: adminRoleIds } },
+          { isSuperAdmin: true },
+        ],
       };
 
       if (search && search.trim()) {
         const regex = new RegExp(escapeRegex(search.trim()), 'i');
-        filter.$or = [
-          { firstName: regex },
-          { lastName: regex },
-          { fullName: regex },
-          { email: regex },
-          { employeeCode: regex },
+        filter.$and = [
+          {
+            $or: [
+              { firstName: regex },
+              { lastName: regex },
+              { fullName: regex },
+              { email: regex },
+              { employeeCode: regex },
+            ],
+          },
         ];
       }
 
       const users = await User.find(filter)
         .select('employeeCode firstName lastName fullName email profilePicture designation role status')
+        .populate('role', 'name label')
         .limit(50)
         .lean();
 
@@ -488,8 +505,8 @@ class DepartmentService {
           id: (u._id || u.id).toString(),
           _id: (u._id || u.id).toString(),
           employeeCode: u.employeeCode || '',
-          name: name || 'User',
-          fullName: name || 'User',
+          name: name || 'Admin',
+          fullName: name || 'Admin',
           firstName: u.firstName || '',
           lastName: u.lastName || '',
           email: u.email || '',

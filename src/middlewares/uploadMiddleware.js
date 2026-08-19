@@ -1,27 +1,18 @@
 const multer = require('multer');
 const path = require('path');
 
-// Configure storage (using diskStorage or cloud storage like S3/Cloudinary)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/deliverables/'); // Ensure this directory exists
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
-  },
-});
+// Configure memory storage so files are streamed directly to Cloudinary
+const storage = multer.memoryStorage();
 
-// File filter matching allowed extensions: pdf, zip, png, jpg
+// File filter matching allowed extensions: pdf, zip, png, jpg, docx, xlsx, etc.
 const fileFilter = (req, file, cb) => {
-  const allowedExtensions = /pdf|zip|png|jpg|jpeg/;
+  const allowedExtensions = /pdf|zip|png|jpg|jpeg|docx|doc|xlsx|xls|csv|txt|webp|svg|rar|7z/i;
   const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedExtensions.test(file.mimetype);
 
-  if (extname && mimetype) {
+  if (extname) {
     return cb(null, true);
   } else {
-    cb(new Error('Only .pdf, .zip, .png, and .jpg files are allowed!'), false);
+    cb(new Error('Invalid file type. Allowed formats: PDF, ZIP, PNG, JPG, DOCX, XLSX, CSV, TXT.'), false);
   }
 };
 
@@ -31,4 +22,4 @@ const uploadDeliverable = multer({
   fileFilter: fileFilter,
 });
 
-module.exports = uploadDeliverable;
+module.exports = uploadDeliverable;

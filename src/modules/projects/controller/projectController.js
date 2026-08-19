@@ -43,6 +43,7 @@ const createProject = async (req, res, next) => {
     const project = await projectService.createProject(
       req.body,
       getUserId(req),
+      req.file,
     );
 
     return res.status(201).json({
