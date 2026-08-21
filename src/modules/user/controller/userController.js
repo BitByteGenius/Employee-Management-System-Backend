@@ -77,7 +77,7 @@ const sanitizeUser = (user) => {
 };
 
 const list = asyncHandler(async (req, res) => {
-  const { status, role, search, deleted, page = 1, limit = 25, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+  const { status, role, search, deleted, department, page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
   const includeDeleted = deleted === 'true' || deleted === 'all';
   const filter = {};
   if (!includeDeleted) {
@@ -87,6 +87,17 @@ const list = asyncHandler(async (req, res) => {
   }
   if (status) {
     filter.status = status;
+  }
+  if (department && mongoose.Types.ObjectId.isValid(department)) {
+    filter.department = new mongoose.Types.ObjectId(department);
+  }
+
+  // Strict Department Scoping: Department Admins only see employees in their department
+  if (req.user && !req.user.isSuperAdmin && (req.user.role === 'admin' || req.user.systemRole === 'ADMIN')) {
+    const userDeptId = (req.user.department?._id || req.user.department || req.user.departmentId)?.toString();
+    if (userDeptId && mongoose.Types.ObjectId.isValid(userDeptId)) {
+      filter.department = new mongoose.Types.ObjectId(userDeptId);
+    }
   }
   if (search) {
     filter.$or = [

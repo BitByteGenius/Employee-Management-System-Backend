@@ -39,7 +39,7 @@ class ProjectService {
       isDeleted: false,
     };
 
-    if (status && status !== 'all' && ['active', 'archived', 'completed', 'on_hold', 'in_progress'].includes(status.toLowerCase())) {
+    if (status && status !== 'all' && ['active', 'archived', 'completed', 'on_hold', 'in_progress', 'planning', 'at_risk'].includes(status.toLowerCase())) {
       filter.status = status.toLowerCase();
     }
 
@@ -98,8 +98,21 @@ class ProjectService {
     const [projects, total] = await Promise.all([
       Project.find(filter)
         .populate('department', 'name code')
-        .populate('manager', 'firstName lastName fullName email profilePicture')
-        .populate('owner', 'firstName lastName fullName email profilePicture')
+        .populate({
+          path: 'manager',
+          select: 'firstName lastName fullName email profilePicture designation assignedRole',
+          populate: { path: 'assignedRole', select: 'name label' },
+        })
+        .populate({
+          path: 'owner',
+          select: 'firstName lastName fullName email profilePicture designation assignedRole',
+          populate: { path: 'assignedRole', select: 'name label' },
+        })
+        .populate({
+          path: 'members',
+          select: 'firstName lastName fullName email profilePicture designation assignedRole',
+          populate: { path: 'assignedRole', select: 'name label' },
+        })
         .sort(sort)
         .skip(skip)
         .limit(limit)
@@ -114,9 +127,12 @@ class ProjectService {
         ? (managerUser.fullName || `${managerUser.firstName || ''} ${managerUser.lastName || ''}`.trim() || managerUser.email)
         : null;
 
+      const dynamicRole = proj.role || managerUser?.designation || managerUser?.assignedRole?.label || managerUser?.assignedRole?.name || 'Project Lead';
+
       return {
         ...proj,
         id: proj._id.toString(),
+        role: dynamicRole,
         managerName,
         tasksRatio: `${proj.completedTasksCount || 0}/${proj.tasksCount || 0}`,
         deliverablesCount: (proj.deliverables || []).length,
@@ -149,9 +165,21 @@ class ProjectService {
       isDeleted: false,
     })
       .populate('department', 'name code description')
-      .populate('manager', 'firstName lastName fullName email profilePicture designation')
-      .populate('owner', 'firstName lastName fullName email profilePicture designation')
-      .populate('members', 'firstName lastName fullName email profilePicture designation')
+      .populate({
+        path: 'manager',
+        select: 'firstName lastName fullName email profilePicture designation assignedRole',
+        populate: { path: 'assignedRole', select: 'name label' },
+      })
+      .populate({
+        path: 'owner',
+        select: 'firstName lastName fullName email profilePicture designation assignedRole',
+        populate: { path: 'assignedRole', select: 'name label' },
+      })
+      .populate({
+        path: 'members',
+        select: 'firstName lastName fullName email profilePicture designation assignedRole',
+        populate: { path: 'assignedRole', select: 'name label' },
+      })
       .populate('deliverables.submittedBy', 'firstName lastName fullName email')
       .lean();
 
@@ -166,9 +194,12 @@ class ProjectService {
       ? (managerUser.fullName || `${managerUser.firstName || ''} ${managerUser.lastName || ''}`.trim() || managerUser.email)
       : null;
 
+    const dynamicRole = project.role || managerUser?.designation || managerUser?.assignedRole?.label || managerUser?.assignedRole?.name || 'Project Lead';
+
     return {
       ...project,
       id: project._id.toString(),
+      role: dynamicRole,
       managerName,
       tasksRatio: `${project.completedTasksCount || 0}/${project.tasksCount || 0}`,
     };
@@ -182,6 +213,7 @@ class ProjectService {
     const {
       key,
       code,
+      role = '',
       description = '',
       department = null,
       owner = null,
@@ -249,12 +281,13 @@ class ProjectService {
     const project = await Project.create({
       name: projectName,
       key: generatedKey,
+      role: (role || '').trim(),
       description: (description || '').trim(),
       department: validDepartment,
       manager: validManager,
       owner: validOwner,
       members: Array.isArray(members) ? members.filter(isValidObjectId) : [],
-      status: ['active', 'archived', 'completed', 'on_hold', 'in_progress'].includes(status) ? status : 'active',
+      status: ['active', 'archived', 'completed', 'on_hold', 'in_progress', 'planning', 'at_risk'].includes(status) ? status : 'active',
       progress: Math.min(Math.max(Number(progress) || 0, 0), 100),
       dueDate: dueDate ? new Date(dueDate) : null,
       startDate: startDate ? new Date(startDate) : new Date(),
@@ -303,6 +336,10 @@ class ProjectService {
       project.key = data.key.trim().toUpperCase();
     }
 
+    if (data.role !== undefined) {
+      project.role = (data.role || '').trim();
+    }
+
     if (data.description !== undefined) {
       project.description = (data.description || '').trim();
     }
@@ -324,7 +361,7 @@ class ProjectService {
     }
 
     if (data.status !== undefined) {
-      if (['active', 'archived', 'completed', 'on_hold', 'in_progress'].includes(data.status)) {
+      if (['active', 'archived', 'completed', 'on_hold', 'in_progress', 'planning', 'at_risk'].includes(data.status)) {
         project.status = data.status;
       }
     }
@@ -367,7 +404,7 @@ class ProjectService {
     }
 
     const normalizedStatus = status?.toLowerCase();
-    if (!['active', 'archived', 'completed', 'on_hold', 'in_progress'].includes(normalizedStatus)) {
+    if (!['active', 'archived', 'completed', 'on_hold', 'in_progress', 'planning', 'at_risk'].includes(normalizedStatus)) {
       const error = new Error('Invalid project status');
       error.statusCode = 400;
       throw error;

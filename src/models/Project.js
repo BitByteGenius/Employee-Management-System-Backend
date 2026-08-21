@@ -24,9 +24,10 @@ const projectSchema = new mongoose.Schema(
     manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    role: { type: String, default: '', trim: true },
     status: {
       type: String,
-      enum: ['active', 'archived', 'completed', 'on_hold', 'in_progress'],
+      enum: ['active', 'archived', 'completed', 'on_hold', 'in_progress', 'planning', 'at_risk'],
       default: 'active',
       index: true,
     },
