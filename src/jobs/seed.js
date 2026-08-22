@@ -142,6 +142,42 @@ const seedSuperAdmin = async () => {
       } catch (migError) {
         console.warn('[Seed/Migration] Migration warning:', migError.message);
       }
+      // 4. Seed sample TimeLog entries if empty
+      try {
+        const TimeLog = require('../models/TimeLog');
+        const count = await TimeLog.countDocuments();
+        if (count === 0 && superAdminUser) {
+          await TimeLog.create([
+            {
+              user: superAdminUser._id,
+              taskName: 'TMS Core Architecture & Cloudinary Upload Pipeline',
+              hours: 7.5,
+              date: new Date(),
+              status: 'approved',
+              notes: 'Setup secure cloud file uploading and JWT session resolution.',
+            },
+            {
+              user: superAdminUser._id,
+              taskName: 'Admin Dashboard & Real Role Enforcement',
+              hours: 6.0,
+              date: new Date(),
+              status: 'approved',
+              notes: 'Implemented persistent top bar and dynamic role badge.',
+            },
+            {
+              user: superAdminUser._id,
+              taskName: 'Department Workforce Scoping & Permissions',
+              hours: 5.5,
+              date: new Date(Date.now() - 86400000),
+              status: 'approved',
+              notes: 'Configured department isolation for task delegation.',
+            },
+          ]);
+          console.log('[Seed] Created initial TimeLog records in MongoDB.');
+        }
+      } catch (timeLogError) {
+        console.warn('[Seed] TimeLog seeding warning:', timeLogError.message);
+      }
     } catch (userError) {
       console.error('[Seed] Error seeding Super Admin user:', userError.message);
       // Don't rethrow - allow system to continue even if user creation fails
@@ -151,6 +187,5 @@ const seedSuperAdmin = async () => {
     // Don't rethrow - allow system to continue even if seeding fails
   }
 };
-
 
 module.exports = seedSuperAdmin;

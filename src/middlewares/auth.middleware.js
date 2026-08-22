@@ -82,7 +82,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
     return next();
   }
 
-  const user = await User.findById(payload.sub).populate('assignedRole').populate('role').lean();
+  const user = await User.findById(payload.sub).populate('assignedRole').populate('department').populate('role').lean();
 
   if (!user) {
     throw new AppError('User not found or account deleted.', HTTP_STATUS.UNAUTHORIZED);
@@ -106,6 +106,14 @@ const authenticate = asyncHandler(async (req, res, next) => {
     ? Object.values(PERMISSIONS)
     : (user.assignedRole?.permissions || (sysRole === 'ADMIN' ? (DEFAULT_ROLE_PERMISSIONS.admin || []) : (user.role?.permissions || DEFAULT_ROLE_PERMISSIONS.employee || [])));
 
+  const deptObj = user.department;
+  const departmentId = (typeof deptObj === 'object' && deptObj !== null && deptObj._id)
+    ? deptObj._id.toString()
+    : (user.department ? user.department.toString() : null);
+  const departmentName = (typeof deptObj === 'object' && deptObj !== null)
+    ? (deptObj.name || deptObj.code || null)
+    : null;
+
   req.user = {
     id: user._id.toString(),
     _id: user._id.toString(),
@@ -118,6 +126,9 @@ const authenticate = asyncHandler(async (req, res, next) => {
     firstName: user.firstName,
     lastName: user.lastName,
     department: user.department,
+    departmentId,
+    departmentName,
+    designation: user.designation,
     employeeCode: user.employeeCode,
     isSuperAdmin,
   };

@@ -28,12 +28,13 @@ const analyticsRoutes = require('./analyticsRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const reportRoutes = require('./reportRoutes');
 const projectRoutes = require('../modules/projects/routes/projectRoutes');
+const taskRoutes = require('../modules/tasks/taskRoutes');
+const timeTrackingRoutes = require('../modules/timeTracking/timeTrackingRoutes');
 
 // ============================================================================
 // MODELS
 // ============================================================================
 
-const Task = require('../models/Task');
 const Role = require('../models/Role');
 const AuditLog = require('../models/AuditLog');
 const Setting = require('../models/Setting');
@@ -43,10 +44,6 @@ const Setting = require('../models/Setting');
 // ============================================================================
 
 const { PERMISSIONS } = require('../constants/roles');
-
-const {
-  taskValidator,
-} = require('../validators/moduleValidators');
 
 // ============================================================================
 // AUTH
@@ -77,16 +74,14 @@ router.use('/projects', projectRoutes);
 // TASKS
 // ============================================================================
 
-router.use(
-  '/tasks',
-  buildCrudRoutes({
-    Model: Task,
-    entity: 'Task',
-    readPermission: PERMISSIONS.TASKS_READ,
-    managePermission: PERMISSIONS.TASKS_MANAGE,
-    validator: taskValidator,
-  })
-);
+router.use('/tasks', taskRoutes);
+
+// ============================================================================
+// TIME TRACKING
+// ============================================================================
+
+router.use('/time-tracking', timeTrackingRoutes);
+router.use('/time-logs', timeTrackingRoutes);
 
 // ============================================================================
 // ROLES
