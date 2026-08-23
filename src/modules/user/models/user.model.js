@@ -64,12 +64,29 @@ const userSchema = new Schema(
 
     profilePicture: { type: String, default: null },
 
-    // Reference to the Role document
+    // System account type (EMPLOYEE, ADMIN, SUPER_ADMIN)
+    systemRole: {
+      type: String,
+      enum: ['EMPLOYEE', 'ADMIN', 'SUPER_ADMIN'],
+      default: 'EMPLOYEE',
+      required: true,
+      index: true,
+      uppercase: true,
+    },
+
+    // Reference to assigned granular Role document (for Employees)
+    assignedRole: {
+      type: Schema.Types.ObjectId,
+      ref: 'Role',
+      default: null,
+      index: true,
+    },
+
+    // Deprecated legacy field preserved for migration compatibility
     role: {
       type: Schema.Types.ObjectId,
       ref: 'Role',
-      required: true,
-      index: true,
+      default: null,
     },
 
     department: {
@@ -162,32 +179,58 @@ userSchema.methods.isLocked = function () {
   return this.lockUntil > Date.now();
 };
 
-/**
- * Build a Flutter-compatible safe user object.
- * Always returns a flat object with string role and permissions array.
- */
 userSchema.methods.toSafeObject = function () {
+  const sysRole = this.systemRole || (
+    typeof this.role === 'object' && this.role !== null && this.role.name
+      ? (this.role.name.toUpperCase().includes('SUPER') ? 'SUPER_ADMIN' : (this.role.name.toUpperCase().includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE'))
+      : 'EMPLOYEE'
+  );
+
+  const assignedRoleObj = this.assignedRole;
+  const assignedRoleId = (typeof assignedRoleObj === 'object' && assignedRoleObj !== null && assignedRoleObj._id)
+    ? assignedRoleObj._id.toString()
+    : (this.assignedRole ? this.assignedRole.toString() : null);
+  const assignedRoleLabel = (typeof assignedRoleObj === 'object' && assignedRoleObj !== null)
+    ? (assignedRoleObj.label || assignedRoleObj.name || null)
+    : null;
+
   const roleObj = this.role;
-  const roleName = typeof roleObj === 'object' && roleObj !== null
-    ? (roleObj.name || 'employee')
-    : String(roleObj || 'employee');
-  const permissions = (typeof roleObj === 'object' && roleObj !== null)
-    ? (roleObj.permissions || [])
-    : [];
+  const permissions = (typeof assignedRoleObj === 'object' && assignedRoleObj !== null && assignedRoleObj.permissions)
+    ? assignedRoleObj.permissions
+    : ((typeof roleObj === 'object' && roleObj !== null && roleObj.permissions) ? roleObj.permissions : []);
+
+  const deptObj = this.department;
+  const departmentId = (typeof deptObj === 'object' && deptObj !== null && deptObj._id)
+    ? deptObj._id.toString()
+    : (this.department ? this.department.toString() : null);
+  const departmentName = (typeof deptObj === 'object' && deptObj !== null)
+    ? (deptObj.name || deptObj.code || null)
+    : null;
 
   return {
     id: this._id.toString(),
     _id: this._id.toString(),
     employeeCode: this.employeeCode,
-    name: this.fullName || `${this.firstName} ${this.lastName}`,
-    fullName: this.fullName || `${this.firstName} ${this.lastName}`,
+    name: this.fullName || `${this.firstName || ''} ${this.lastName || ''}`.trim(),
+    fullName: this.fullName || `${this.firstName || ''} ${this.lastName || ''}`.trim(),
     firstName: this.firstName,
     lastName: this.lastName,
     email: this.email,
     phone: this.phone,
-    role: roleName,
+
+    systemRole: sysRole,
+    role: sysRole, // string for UI & backward compatibility
+
+    assignedRole: typeof assignedRoleObj === 'object' ? assignedRoleObj : null,
+    assignedRoleId,
+    assignedRoleLabel,
+
     permissions,
-    department: this.department,
+
+    department: typeof deptObj === 'object' ? deptObj : null,
+    departmentId,
+    departmentName,
+
     designation: this.designation,
     profilePicture: this.profilePicture,
     isActive: this.isActive,
@@ -196,6 +239,7 @@ userSchema.methods.toSafeObject = function () {
     accountStatus: this.status, // alias for Flutter compatibility
     lastLogin: this.lastLogin,
     createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
   };
 };
 

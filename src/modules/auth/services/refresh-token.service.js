@@ -72,8 +72,12 @@ const refresh = async (token) => {
     throw new AppError('User not found.', HTTP_STATUS.UNAUTHORIZED);
   }
 
-  const roleName = user.role?.name || 'employee';
-  const jwtPayload = { sub: user._id.toString(), role: roleName, email: user.email };
+  const sysRole = user.systemRole || (
+    user.role?.name?.toUpperCase().includes('SUPER') ? 'SUPER_ADMIN' : (user.role?.name?.toUpperCase().includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE')
+  );
+  const isSuperAdmin = sysRole === 'SUPER_ADMIN' || user.role?.name === 'super_admin';
+  const roleName = isSuperAdmin ? 'super_admin' : (sysRole === 'ADMIN' ? 'admin' : 'employee');
+  const jwtPayload = { sub: user._id.toString(), role: roleName, systemRole: sysRole, email: user.email };
 
   const newAccessToken = generateAccessToken(jwtPayload);
   const newRefreshToken = generateRefreshToken(jwtPayload);

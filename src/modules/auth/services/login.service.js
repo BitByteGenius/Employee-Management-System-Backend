@@ -34,14 +34,46 @@ const refreshTokenExpiry = () =>
 const login = async ({ email, password, device = {}, req }) => {
   const normalizedEmail = email?.trim().toLowerCase();
 
-  // ─── Development: Allow super admin bypass (for when DB is temporarily unavailable) ───
-  if (env.NODE_ENV !== 'production' && normalizedEmail === env.SUPER_ADMIN_EMAIL && password === env.SUPER_ADMIN_PASSWORD) {
-    console.log('[Auth] Super Admin development login bypass used');
+  const Role = require('../../../models/Role');
+  const User = require('../../user/models/user.model');
+  const { hashPassword } = require('../../../shared/utils/password.util');
+
+  // ─── Super Admin credentials lookup ───
+  if (normalizedEmail === env.SUPER_ADMIN_EMAIL && password === env.SUPER_ADMIN_PASSWORD) {
+    console.log('[Auth] Super Admin login authenticated');
+
+    let superAdminRole = await Role.findOne({ name: 'super_admin' });
+    if (!superAdminRole) {
+      superAdminRole = await Role.create({
+        name: 'super_admin',
+        label: 'Super Admin',
+        description: 'Full system access',
+        permissions: Object.values(PERMISSIONS),
+        isSystem: true,
+      });
+    }
+
+    let user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      user = await User.create({
+        employeeCode: 'SA-001',
+        firstName: env.SUPER_ADMIN_NAME.split(' ')[0] || 'Super',
+        lastName: env.SUPER_ADMIN_NAME.split(' ').slice(1).join(' ') || 'Admin',
+        fullName: env.SUPER_ADMIN_NAME,
+        email: normalizedEmail,
+        password: await hashPassword(password),
+        role: superAdminRole._id,
+        isActive: true,
+        isApproved: true,
+        status: 'approved',
+        isEmailVerified: true,
+      });
+    }
 
     const jwtPayload = {
-      sub: 'super_admin_dev',
+      sub: user._id.toString(),
       role: 'super_admin',
-      email: env.SUPER_ADMIN_EMAIL,
+      email: normalizedEmail,
     };
 
     const accessToken = generateAccessToken(jwtPayload);
@@ -51,13 +83,13 @@ const login = async ({ email, password, device = {}, req }) => {
       accessToken,
       refreshToken,
       user: {
-        id: 'super_admin_dev',
-        _id: 'super_admin_dev',
-        name: env.SUPER_ADMIN_NAME,
-        fullName: env.SUPER_ADMIN_NAME,
-        firstName: env.SUPER_ADMIN_NAME.split(' ')[0],
-        lastName: env.SUPER_ADMIN_NAME.split(' ').slice(1).join(' ') || 'Admin',
-        email: env.SUPER_ADMIN_EMAIL,
+        id: user._id.toString(),
+        _id: user._id.toString(),
+        name: user.fullName || env.SUPER_ADMIN_NAME,
+        fullName: user.fullName || env.SUPER_ADMIN_NAME,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
         role: 'super_admin',
         permissions: Object.values(PERMISSIONS),
         isActive: true,
@@ -81,12 +113,12 @@ const login = async ({ email, password, device = {}, req }) => {
     throw new AppError('Invalid email or password.', HTTP_STATUS.UNAUTHORIZED);
   }
 
-  if (!user.isActive) {
-    throw new AppError('Your account has been deactivated.', HTTP_STATUS.FORBIDDEN);
+  if (!user.isApproved || user.status !== 'approved') {
+    throw new AppError('Account pending approval. Please wait for Super Admin approval.', HTTP_STATUS.FORBIDDEN);
   }
 
-  if (!user.isApproved || user.status !== 'approved') {
-    throw new AppError('Your account is not yet approved. Please wait for Super Admin approval.', HTTP_STATUS.FORBIDDEN);
+  if (!user.isActive) {
+    throw new AppError('Your account has been deactivated.', HTTP_STATUS.FORBIDDEN);
   }
 
   if (user.isLocked()) {
@@ -114,11 +146,16 @@ const login = async ({ email, password, device = {}, req }) => {
   await authRepository.resetLoginAttempts(user._id);
 
   /* ── JWT ─────────────────────────────────────────────────────────────── */
-  const roleName = user.role?.name || 'employee';
+  const sysRole = user.systemRole || (
+    user.role?.name?.toUpperCase().includes('SUPER') ? 'SUPER_ADMIN' : (user.role?.name?.toUpperCase().includes('ADMIN') ? 'ADMIN' : 'EMPLOYEE')
+  );
+  const isSuperAdmin = sysRole === 'SUPER_ADMIN' || user.role?.name === 'super_admin';
+  const roleName = isSuperAdmin ? 'super_admin' : (sysRole === 'ADMIN' ? 'admin' : 'employee');
 
   const jwtPayload = {
     sub: user._id.toString(),
     role: roleName,
+    systemRole: sysRole,
     email: user.email,
   };
 
@@ -147,6 +184,10 @@ const login = async ({ email, password, device = {}, req }) => {
     action: AUDIT_ACTIONS.LOGIN,
     entity: AUDIT_ENTITIES.AUTH,
     entityId: user._id,
+    metadata: {
+      actorName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      email: user.email,
+    },
   });
 
   /* ── Response ────────────────────────────────────────────────────────── */

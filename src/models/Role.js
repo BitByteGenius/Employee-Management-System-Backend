@@ -1,2 +1,1 @@
-module.exports = require('../modules/auth/models/role.model');
-
+module.exports = require('../modules/roles/models/role.model');

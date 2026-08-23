@@ -5,7 +5,7 @@
 
 const authRepository = require('../repositories/auth.repository');
 const sessionRepository = require('../repositories/session.repository');
-const Role = require('../models/role.model');
+const Role = require('../../roles/models/role.model');
 const { generateAccessToken, generateRefreshToken } = require('../../../shared/utils/jwt.util');
 const AppError = require('../../../shared/errors/app.error');
 const { HTTP_STATUS, ROLES } = require('../../../constants');

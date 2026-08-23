@@ -4,24 +4,26 @@
  */
 'use strict';
 
-const User = require('../models/user.model');
+const User = require('../../user/models/user.model');
 
 class AuthRepository {
   /** Find user by email — includes password & refreshToken (select:false fields) */
   async findByEmail(email) {
     return User.findOne({ email: email.toLowerCase().trim() })
       .select('+password +refreshToken')
+      .populate('assignedRole')
+      .populate('department')
       .populate('role');
   }
 
-  /** Find user by id, populate role & department */
+  /** Find user by id, populate assignedRole, role & department */
   async findById(id) {
-    return User.findById(id).populate('role').populate('department');
+    return User.findById(id).populate('assignedRole').populate('department').populate('role');
   }
 
   /** Find user by id, include password */
   async findByIdWithPassword(id) {
-    return User.findById(id).select('+password').populate('role').populate('department');
+    return User.findById(id).select('+password').populate('assignedRole').populate('department').populate('role');
   }
 
   /** Create a new user */

@@ -21,4 +21,17 @@ const taskValidator = [
   body('assignee').optional().isMongoId(),
 ];
 
-module.exports = { idParam, departmentValidator, projectValidator, taskValidator };
+// Added deliverable validator
+const deliverableValidator = [
+  body('externalLink').optional().isURL().withMessage('Invalid URL format for external link'),
+  body('selectedDate').optional().isISO8601().toDate().withMessage('Invalid deadline date format'),
+  body('notes').optional().trim().isString(),
+];
+
+module.exports = { 
+  idParam, 
+  departmentValidator, 
+  projectValidator, 
+  taskValidator, 
+  deliverableValidator 
+};

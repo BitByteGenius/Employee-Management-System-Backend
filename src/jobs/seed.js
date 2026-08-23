@@ -4,8 +4,8 @@
  */
 'use strict';
 
-const Role = require('../modules/auth/models/role.model');
-const User = require('../modules/auth/models/user.model');
+const Role = require('../modules/roles/models/role.model');
+const User = require('../modules/user/models/user.model');
 const { ROLES, PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } = require('../constants/roles');
 const env = require('../config/env');
 
@@ -79,7 +79,7 @@ const seedSuperAdmin = async () => {
     const superAdminName = env.SUPER_ADMIN_NAME || process.env.SUPER_ADMIN_NAME || 'Super Admin';
 
     try {
-      let superAdminUser = await User.findOne({ email: superAdminEmail }).withDeleted();
+      let superAdminUser = await User.findOne({ email: superAdminEmail }).select('+password').withDeleted();
 
       const nameParts = superAdminName.trim().split(' ');
       const firstName = nameParts[0] || 'Super';
@@ -93,6 +93,8 @@ const seedSuperAdmin = async () => {
           fullName: superAdminName,
           email: superAdminEmail,
           password: superAdminPassword, // pre-save hook will hash it
+          systemRole: 'SUPER_ADMIN',
+          assignedRole: roleDocs[ROLES.SUPER_ADMIN]._id,
           role: roleDocs[ROLES.SUPER_ADMIN]._id,
           status: 'approved',
           isApproved: true,
@@ -103,6 +105,8 @@ const seedSuperAdmin = async () => {
         console.log(`[Seed] Created Super Admin account: ${superAdminEmail}`);
       } else {
         // Ensure role, status, active state, and password are correctly set
+        superAdminUser.systemRole = 'SUPER_ADMIN';
+        superAdminUser.assignedRole = roleDocs[ROLES.SUPER_ADMIN]._id;
         superAdminUser.role = roleDocs[ROLES.SUPER_ADMIN]._id;
         superAdminUser.status = 'approved';
         superAdminUser.isApproved = true;
@@ -113,6 +117,67 @@ const seedSuperAdmin = async () => {
         await superAdminUser.save();
         console.log(`[Seed] Verified Super Admin account: ${superAdminEmail}`);
       }
+
+      // 3. Migrate existing users if systemRole is not set
+      try {
+        const unmigratedUsers = await User.find({
+          $or: [{ systemRole: { $exists: false } }, { systemRole: null }],
+        }).populate('role').withDeleted();
+
+        for (const u of unmigratedUsers) {
+          const roleName = (u.role?.name || '').toLowerCase();
+          if (roleName.includes('super')) {
+            u.systemRole = 'SUPER_ADMIN';
+            u.assignedRole = u.role?._id || null;
+          } else if (roleName.includes('admin')) {
+            u.systemRole = 'ADMIN';
+            u.assignedRole = null;
+          } else {
+            u.systemRole = 'EMPLOYEE';
+            u.assignedRole = (u.role && u.role.name !== 'employee') ? u.role._id : null;
+          }
+          await u.save();
+          console.log(`[Seed/Migration] Migrated user ${u.email} -> systemRole: ${u.systemRole}`);
+        }
+      } catch (migError) {
+        console.warn('[Seed/Migration] Migration warning:', migError.message);
+      }
+      // 4. Seed sample TimeLog entries if empty
+      try {
+        const TimeLog = require('../models/TimeLog');
+        const count = await TimeLog.countDocuments();
+        if (count === 0 && superAdminUser) {
+          await TimeLog.create([
+            {
+              user: superAdminUser._id,
+              taskName: 'TMS Core Architecture & Cloudinary Upload Pipeline',
+              hours: 7.5,
+              date: new Date(),
+              status: 'approved',
+              notes: 'Setup secure cloud file uploading and JWT session resolution.',
+            },
+            {
+              user: superAdminUser._id,
+              taskName: 'Admin Dashboard & Real Role Enforcement',
+              hours: 6.0,
+              date: new Date(),
+              status: 'approved',
+              notes: 'Implemented persistent top bar and dynamic role badge.',
+            },
+            {
+              user: superAdminUser._id,
+              taskName: 'Department Workforce Scoping & Permissions',
+              hours: 5.5,
+              date: new Date(Date.now() - 86400000),
+              status: 'approved',
+              notes: 'Configured department isolation for task delegation.',
+            },
+          ]);
+          console.log('[Seed] Created initial TimeLog records in MongoDB.');
+        }
+      } catch (timeLogError) {
+        console.warn('[Seed] TimeLog seeding warning:', timeLogError.message);
+      }
     } catch (userError) {
       console.error('[Seed] Error seeding Super Admin user:', userError.message);
       // Don't rethrow - allow system to continue even if user creation fails
@@ -122,6 +187,5 @@ const seedSuperAdmin = async () => {
     // Don't rethrow - allow system to continue even if seeding fails
   }
 };
-
 
 module.exports = seedSuperAdmin;
