@@ -183,9 +183,10 @@ class TaskService {
     });
 
     // 3. If attached to a project, update project task counters and deliverables
+    let projectDoc = null;
     if (validProject) {
       try {
-        const projectDoc = await Project.findById(validProject);
+        projectDoc = await Project.findById(validProject);
         if (projectDoc) {
           projectDoc.tasksCount = (projectDoc.tasksCount || 0) + 1;
           if (fileUrl) {
@@ -205,6 +206,37 @@ class TaskService {
         }
       } catch (projErr) {
         console.error('Warning updating project for task:', projErr);
+      }
+    }
+
+    // 4. Notify Assignee if assigned to someone other than creator
+    if (validAssignee && validAssignee.toString() !== validUserId?.toString()) {
+      try {
+        const notificationService = require('../../services/notificationService');
+        const User = require('../user/models/user.model');
+        const creator = validUserId ? await User.findById(validUserId).select('fullName firstName lastName') : null;
+        const creatorName = creator?.fullName || (creator?.firstName ? `${creator.firstName} ${creator.lastName || ''}`.trim() : 'Team Lead');
+        const projPrefix = projectDoc?.name ? `${projectDoc.name}: ` : '';
+
+        await notificationService.notify({
+          recipient: validAssignee,
+          sender: validUserId,
+          type: 'task_assigned',
+          category: 'projects',
+          title: `${projPrefix}New Task Assigned`,
+          message: `${creatorName} assigned a new priority task to your queue regarding "${title}".`,
+          entityType: 'Task',
+          entityId: task._id.toString(),
+          priority: data.priority || 'medium',
+          actionType: 'view_task',
+          metadata: {
+            taskId: task._id.toString(),
+            projectId: validProject ? validProject.toString() : null,
+            projectName: projectDoc?.name || null,
+          },
+        });
+      } catch (notifErr) {
+        console.error('Warning sending task assigned notification:', notifErr);
       }
     }
 
@@ -228,6 +260,9 @@ class TaskService {
       throw error;
     }
 
+    const oldAssignee = task.assignee?.toString();
+    const oldStatus = task.status;
+
     if (data.title !== undefined) task.title = data.title.trim();
     if (data.description !== undefined) task.description = data.description.trim();
     if (data.status !== undefined) task.status = data.status;
@@ -238,6 +273,42 @@ class TaskService {
 
     task.updatedBy = isValidObjectId(currentUserId) ? currentUserId : null;
     await task.save();
+
+    // Trigger notification if assignee was updated
+    const newAssignee = task.assignee?.toString();
+    if (newAssignee && newAssignee !== oldAssignee && newAssignee !== currentUserId?.toString()) {
+      try {
+        const notificationService = require('../../services/notificationService');
+        const User = require('../user/models/user.model');
+        const updater = isValidObjectId(currentUserId) ? await User.findById(currentUserId).select('fullName firstName lastName') : null;
+        const updaterName = updater?.fullName || (updater?.firstName ? `${updater.firstName} ${updater.lastName || ''}`.trim() : 'Manager');
+
+        let projName = '';
+        if (task.project) {
+          const p = await Project.findById(task.project).select('name');
+          if (p?.name) projName = `${p.name}: `;
+        }
+
+        await notificationService.notify({
+          recipient: task.assignee,
+          sender: currentUserId,
+          type: 'task_assigned',
+          category: 'projects',
+          title: `${projName}Task Assigned`,
+          message: `${updaterName} assigned the task "${task.title}" to you.`,
+          entityType: 'Task',
+          entityId: task._id.toString(),
+          priority: task.priority || 'medium',
+          actionType: 'view_task',
+          metadata: {
+            taskId: task._id.toString(),
+            projectId: task.project ? task.project.toString() : null,
+          },
+        });
+      } catch (notifErr) {
+        console.error('Warning sending task reassigned notification:', notifErr);
+      }
+    }
 
     return this.getTaskById(id);
   }
@@ -281,6 +352,60 @@ class TaskService {
       } catch (pErr) {
         console.error('Warning updating project progress:', pErr);
       }
+    }
+
+    // Trigger status change notifications
+    try {
+      const notificationService = require('../../services/notificationService');
+      const User = require('../user/models/user.model');
+      const updater = isValidObjectId(currentUserId) ? await User.findById(currentUserId).select('fullName firstName lastName') : null;
+      const updaterName = updater?.fullName || (updater?.firstName ? `${updater.firstName} ${updater.lastName || ''}`.trim() : 'A team member');
+
+      if (status === 'completed') {
+        // If employee completed the task, notify creator/reporter
+        const recipient = (task.createdBy && task.createdBy.toString() !== currentUserId?.toString())
+          ? task.createdBy
+          : (task.reporter && task.reporter.toString() !== currentUserId?.toString() ? task.reporter : null);
+
+        if (recipient) {
+          await notificationService.notify({
+            recipient,
+            sender: currentUserId,
+            type: 'task_completed',
+            category: 'projects',
+            title: `Task Completed: ${task.title}`,
+            message: `${updaterName} marked the task "${task.title}" as completed.`,
+            entityType: 'Task',
+            entityId: task._id.toString(),
+            actionType: 'view_task',
+            metadata: {
+              taskId: task._id.toString(),
+              projectId: task.project ? task.project.toString() : null,
+            },
+          });
+        }
+      } else if (oldStatus !== status) {
+        // Notify assignee if status changed by manager
+        if (task.assignee && task.assignee.toString() !== currentUserId?.toString()) {
+          await notificationService.notify({
+            recipient: task.assignee,
+            sender: currentUserId,
+            type: 'task_status_changed',
+            category: 'projects',
+            title: `Task Status Updated: ${task.title}`,
+            message: `${updaterName} changed status to "${status}".`,
+            entityType: 'Task',
+            entityId: task._id.toString(),
+            actionType: 'view_task',
+            metadata: {
+              taskId: task._id.toString(),
+              projectId: task.project ? task.project.toString() : null,
+            },
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Warning sending task status notification:', notifErr);
     }
 
     return this.getTaskById(id);

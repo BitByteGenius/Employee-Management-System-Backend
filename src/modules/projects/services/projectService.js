@@ -298,6 +298,32 @@ class ProjectService {
       updatedBy: validUserId,
     });
 
+    // Notify assigned members and manager
+    try {
+      const notificationService = require('../../../services/notificationService');
+      const recipients = [...(Array.isArray(members) ? members : []), validManager]
+        .filter((m) => m && m.toString() !== validUserId?.toString());
+
+      if (recipients.length > 0) {
+        await notificationService.notifyMany(recipients, {
+          sender: validUserId,
+          type: 'project_assigned',
+          category: 'projects',
+          title: `Project Assigned: ${projectName}`,
+          message: `You have been added to the project "${projectName}".`,
+          entityType: 'Project',
+          entityId: project._id.toString(),
+          actionType: 'view_project',
+          metadata: {
+            projectId: project._id.toString(),
+            projectKey: generatedKey,
+          },
+        });
+      }
+    } catch (notifErr) {
+      console.error('Warning sending project creation notifications:', notifErr);
+    }
+
     return this.getProjectById(project._id);
   }
 

@@ -182,6 +182,25 @@ const approve = asyncHandler(async (req, res) => {
     },
   });
 
+  // Notify the approved user
+  try {
+    const notificationService = require('../../../services/notificationService');
+    await notificationService.notify({
+      recipient: user._id,
+      sender: req.user?.id || req.user?._id,
+      type: 'user_activated',
+      category: 'team',
+      title: 'Account Approved',
+      message: `Your account registration has been approved. Welcome to TeamOrbit TMS!`,
+      entityType: 'User',
+      entityId: user._id.toString(),
+      actionType: 'more_info',
+      metadata: { userId: user._id.toString() },
+    });
+  } catch (notifErr) {
+    console.error('Warning sending user approval notification:', notifErr);
+  }
+
   res.json({ success: true, message: 'User approved successfully', data: sanitizeUser(user) });
 });
 
