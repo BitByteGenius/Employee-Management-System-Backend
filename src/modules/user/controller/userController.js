@@ -7,6 +7,7 @@ const AppError = require('../../../shared/errors/app.error');
 const { HTTP_STATUS } = require('../../../constants');
 const auditHelper = require('../../../shared/helpers/audit.helper');
 const { AUDIT_ENTITIES } = require('../../audit/constants/audit.constants');
+const { uploadBufferToCloudinary } = require('../../../config/cloudinary');
 
 const sanitizeUser = (user) => {
   if (typeof user.toSafeObject === 'function') {
@@ -65,6 +66,10 @@ const sanitizeUser = (user) => {
     departmentName,
 
     designation: user.designation,
+    address: user.address || '',
+    dateOfBirth: user.dateOfBirth || null,
+    bio: user.bio || '',
+    emergencyContact: user.emergencyContact || '',
     profilePicture: user.profilePicture,
     isActive: user.isActive,
     isApproved: user.isApproved,
@@ -397,4 +402,165 @@ const remove = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'User deleted successfully', data: sanitizeUser(user) });
 });
 
-module.exports = { list, approve, reject, activate, deactivate, updateRole, assignDepartment, assignRole, remove };
+/**
+ * GET /api/v1/users/profile
+ * Get authenticated user's complete profile details
+ */
+const getProfile = asyncHandler(async (req, res) => {
+  const userId = req.user?.id || req.user?._id;
+  if (!userId) throw new AppError('Authentication required.', HTTP_STATUS.UNAUTHORIZED);
+
+  const user = await User.findById(userId)
+    .populate('assignedRole')
+    .populate('department')
+    .populate('role');
+
+  if (!user) {
+    throw new AppError('User profile not found.', HTTP_STATUS.NOT_FOUND);
+  }
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: 'Profile retrieved successfully.',
+    data: sanitizeUser(user),
+  });
+});
+
+/**
+ * PATCH /api/v1/users/profile
+ * Update authenticated user's editable details
+ */
+const updateProfile = asyncHandler(async (req, res) => {
+  const userId = req.user?.id || req.user?._id;
+  if (!userId) throw new AppError('Authentication required.', HTTP_STATUS.UNAUTHORIZED);
+
+  const user = await User.findById(userId)
+    .populate('assignedRole')
+    .populate('department')
+    .populate('role');
+
+  if (!user) {
+    throw new AppError('User profile not found.', HTTP_STATUS.NOT_FOUND);
+  }
+
+  const {
+    firstName,
+    lastName,
+    phone,
+    designation,
+    address,
+    dateOfBirth,
+    bio,
+    emergencyContact,
+  } = req.body;
+
+  if (firstName !== undefined) user.firstName = firstName.trim();
+  if (lastName !== undefined) user.lastName = lastName.trim();
+  if (firstName !== undefined || lastName !== undefined) {
+    user.fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+  }
+
+  if (phone !== undefined) user.phone = phone ? phone.trim() : null;
+  if (designation !== undefined) user.designation = designation.trim();
+  if (address !== undefined) user.address = address.trim();
+  if (dateOfBirth !== undefined) {
+    user.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+  }
+  if (bio !== undefined) user.bio = bio.trim();
+  if (emergencyContact !== undefined) user.emergencyContact = emergencyContact.trim();
+
+  await user.save();
+
+  await auditHelper.log({
+    req,
+    user: userId,
+    action: 'user.update_profile',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      fullName: user.fullName,
+      email: user.email,
+    },
+  });
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: 'Profile updated successfully.',
+    data: sanitizeUser(user),
+  });
+});
+
+/**
+ * POST /api/v1/users/profile/picture
+ * Upload profile picture to Cloudinary and update user record
+ */
+const updateProfilePicture = asyncHandler(async (req, res) => {
+  const userId = req.user?.id || req.user?._id;
+  if (!userId) throw new AppError('Authentication required.', HTTP_STATUS.UNAUTHORIZED);
+
+  if (!req.file) {
+    throw new AppError('No image file provided.', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  const user = await User.findById(userId)
+    .populate('assignedRole')
+    .populate('department')
+    .populate('role');
+
+  if (!user) {
+    throw new AppError('User not found.', HTTP_STATUS.NOT_FOUND);
+  }
+
+  let avatarUrl = '';
+
+  try {
+    const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: 'teamorbit/avatars',
+      resource_type: 'image',
+      transformation: [
+        { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+        { quality: 'auto', fetch_format: 'auto' },
+      ],
+    });
+    avatarUrl = uploadResult.secure_url || uploadResult.url;
+  } catch (uploadError) {
+    console.error('[Cloudinary Upload Error]', uploadError);
+    throw new AppError(`Failed to upload avatar: ${uploadError.message}`, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+  }
+
+  user.profilePicture = avatarUrl;
+  await user.save();
+
+  await auditHelper.log({
+    req,
+    user: userId,
+    action: 'user.update_avatar',
+    entity: AUDIT_ENTITIES.USER,
+    entityId: user._id,
+    metadata: {
+      avatarUrl,
+      email: user.email,
+    },
+  });
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: 'Profile picture updated successfully.',
+    data: sanitizeUser(user),
+  });
+});
+
+module.exports = {
+  list,
+  approve,
+  reject,
+  activate,
+  deactivate,
+  updateRole,
+  assignDepartment,
+  assignRole,
+  remove,
+  getProfile,
+  updateProfile,
+  updateProfilePicture,
+};

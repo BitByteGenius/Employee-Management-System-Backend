@@ -54,7 +54,7 @@ class TaskService {
           populate: { path: 'assignedRole', select: 'name label' },
         })
         .populate('department', 'name code')
-        .populate('createdBy', 'firstName lastName fullName email')
+        .populate('createdBy', 'firstName lastName fullName email profilePicture designation')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -91,7 +91,7 @@ class TaskService {
         populate: { path: 'assignedRole', select: 'name label' },
       })
       .populate('department', 'name code')
-      .populate('createdBy', 'firstName lastName fullName email')
+      .populate('createdBy', 'firstName lastName fullName email profilePicture designation')
       .lean();
 
     if (!task) {

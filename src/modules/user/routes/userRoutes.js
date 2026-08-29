@@ -5,7 +5,16 @@ const requirePermissions = require('../../../middlewares/permissionMiddleware');
 const auditLogger = require('../../../middlewares/auditLogger');
 const { PERMISSIONS } = require('../../../constants/roles');
 
+const uploadDeliverable = require('../../../middlewares/uploadMiddleware');
+
 router.use(authenticate);
+
+// ─── Current User Profile Routes ─────────────────────────────────────────────
+router.get('/profile', controller.getProfile);
+router.patch('/profile', controller.updateProfile);
+router.post('/profile/picture', uploadDeliverable.single('avatar'), controller.updateProfilePicture);
+
+// ─── User Management Routes ──────────────────────────────────────────────────
 router.get('/', requirePermissions(PERMISSIONS.USERS_READ), controller.list);
 router.patch('/:id/approve', requirePermissions(PERMISSIONS.USERS_MANAGE), auditLogger('user.approve', 'User'), controller.approve);
 router.patch('/:id/reject', requirePermissions(PERMISSIONS.USERS_MANAGE), auditLogger('user.reject', 'User'), controller.reject);
