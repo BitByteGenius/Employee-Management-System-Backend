@@ -37,10 +37,32 @@ app.use(compression());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Setup Swagger UI Documentation at /api-docs
+// setupSwagger(app);
+
+// app.get('/health', (req, res) => res.json({ status: 'ok', service: 'tms-api' }));
+// app.use('/api/v1', routes);
+// app.use(errorHandler);
+// Setup Swagger UI Documentation
 setupSwagger(app);
 
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'tms-api' }));
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'TMS API is running successfully 🚀',
+  });
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'tms-api',
+  });
+});
+
 app.use('/api/v1', routes);
+
 app.use(errorHandler);
 
 module.exports = app;
