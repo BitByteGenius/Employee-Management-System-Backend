@@ -178,6 +178,122 @@ const seedSuperAdmin = async () => {
       } catch (timeLogError) {
         console.warn('[Seed] TimeLog seeding warning:', timeLogError.message);
       }
+
+      // 5. Seed initial Notifications for users if empty
+      try {
+        const Notification = require('../models/Notification');
+        const notifCount = await Notification.countDocuments();
+        const allUsers = await User.find({ isDeleted: false });
+
+        if (notifCount === 0 && allUsers.length > 0) {
+          const now = Date.now();
+          const seedNotifications = [];
+
+          for (const u of allUsers) {
+            seedNotifications.push(
+              {
+                recipient: u._id,
+                title: 'Project Alpha: New Task Assigned',
+                message: 'Sarah Jenkins assigned a new priority task to your queue regarding the Q3 marketing deliverables.',
+                type: 'task_assigned',
+                category: 'projects',
+                entityType: 'Task',
+                entityId: 'alpha-task-1',
+                isRead: false,
+                readAt: null,
+                priority: 'high',
+                actionType: 'view_task',
+                metadata: { taskId: 'alpha-task-1', projectName: 'Project Alpha' },
+                createdAt: new Date(now - 10 * 60 * 1000), // 10m ago
+              },
+              {
+                recipient: u._id,
+                title: 'System Maintenance Scheduled',
+                message: 'Servers will be down for routine maintenance on Saturday, Oct 28th from 02:00 AM to 04:00 AM UTC.',
+                type: 'system_alert',
+                category: 'system',
+                entityType: 'System',
+                entityId: 'sys-maint-1',
+                isRead: true,
+                readAt: new Date(now - 3600 * 1000),
+                priority: 'medium',
+                actionType: 'more_info',
+                metadata: { announcement: 'Scheduled maintenance window.' },
+                createdAt: new Date(now - 2 * 3600 * 1000), // 2h ago
+              },
+              {
+                recipient: u._id,
+                title: 'Team Onboarding & Workspace Sync',
+                message: 'Your department workspace has been synchronized. Welcome to TeamOrbit TMS!',
+                type: 'team_update',
+                category: 'team',
+                entityType: 'User',
+                entityId: u._id.toString(),
+                isRead: false,
+                readAt: null,
+                priority: 'low',
+                actionType: 'more_info',
+                createdAt: new Date(now - 5 * 3600 * 1000), // 5h ago
+              }
+            );
+          }
+
+          await Notification.insertMany(seedNotifications);
+          console.log(`[Seed] Created ${seedNotifications.length} sample Notification records.`);
+        }
+      } catch (notifSeedErr) {
+        console.warn('[Seed] Notification seeding warning:', notifSeedErr.message);
+      }
+
+      // 6. Seed sample AuditLog entries if empty
+      try {
+        const AuditLog = require('../models/AuditLog');
+        const logCount = await AuditLog.countDocuments();
+        if (logCount === 0 && superAdminUser) {
+          const now = Date.now();
+          await AuditLog.create([
+            {
+              actor: superAdminUser._id,
+              action: 'project.create',
+              entityType: 'Project',
+              entityId: 'proj-001',
+              metadata: {
+                name: 'Project Alpha',
+                actorName: 'David Vance',
+                targetUserName: 'David Vance',
+              },
+              createdAt: new Date(now - 3 * 3600 * 1000), // 3 hours ago
+            },
+            {
+              actor: superAdminUser._id,
+              action: 'task.create',
+              entityType: 'Task',
+              entityId: 'task-001',
+              metadata: {
+                title: 'Q3 Marketing Deliverables Review',
+                actorName: 'Sarah Jenkins',
+                targetUserName: 'Sarah Jenkins',
+              },
+              createdAt: new Date(now - 5 * 3600 * 1000), // 5 hours ago
+            },
+            {
+              actor: superAdminUser._id,
+              action: 'user.approve',
+              entityType: 'User',
+              entityId: superAdminUser._id,
+              metadata: {
+                actorName: 'Super Admin',
+                targetUserName: 'Elena Rostova',
+                roleName: 'Department Admin',
+              },
+              createdAt: new Date(now - 24 * 3600 * 1000), // 1 day ago
+            },
+          ]);
+          console.log('[Seed] Created initial AuditLog records for Recent Activity.');
+        }
+      } catch (auditSeedErr) {
+        console.warn('[Seed] AuditLog seeding warning:', auditSeedErr.message);
+      }
     } catch (userError) {
       console.error('[Seed] Error seeding Super Admin user:', userError.message);
       // Don't rethrow - allow system to continue even if user creation fails
@@ -187,5 +303,19 @@ const seedSuperAdmin = async () => {
     // Don't rethrow - allow system to continue even if seeding fails
   }
 };
+
+if (require.main === module) {
+  require('dotenv').config();
+  const connectDb = require('../config/db');
+  connectDb()
+    .then(async () => {
+      await seedSuperAdmin();
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('Seed execution error:', err);
+      process.exit(1);
+    });
+}
 
 module.exports = seedSuperAdmin;

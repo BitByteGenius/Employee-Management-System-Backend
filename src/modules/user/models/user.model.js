@@ -232,6 +232,10 @@ userSchema.methods.toSafeObject = function () {
     departmentName,
 
     designation: this.designation,
+    address: this.address || '',
+    dateOfBirth: this.dateOfBirth || null,
+    bio: this.bio || '',
+    emergencyContact: this.emergencyContact || '',
     profilePicture: this.profilePicture,
     isActive: this.isActive,
     isApproved: this.isApproved,
